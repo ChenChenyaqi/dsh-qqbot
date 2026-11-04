@@ -505,13 +505,13 @@ describe('QQ prompt 注册生命周期（per-agent 安装 / 释放 / live 复用
     return { registry, created };
   }
 
-  it('会话建立即注册 4 个 section + 2 个 context；remove() 全部释放', async () => {
+  it('会话建立即注册 5 个 section + 2 个 context；remove() 全部释放', async () => {
     const { registry, created } = promptRegistry();
     const manager = createManager(registry);
 
     await manager.getOrCreate('c2c', PEER, PEER, REPLY);
     expect(created).toHaveLength(1);
-    expect([...created[0].sections.keys()].sort()).toEqual(['qqbot:extra', 'qqbot:persona', 'qqbot:rules']);
+    expect([...created[0].sections.keys()].sort()).toEqual(['qqbot:extra', 'qqbot:persona', 'qqbot:rules', 'qqbot:stickers']);
     expect([...created[0].contexts.keys()].sort()).toEqual(['qqbot:background', 'qqbot:turn-meta']);
 
     await manager.remove('c2c', PEER);
@@ -554,7 +554,7 @@ describe('QQ prompt 注册生命周期（per-agent 安装 / 释放 / live 复用
     expect(record.agent).toBe(agent);
     expect(registry.create).toHaveBeenCalledTimes(1); // 未重建 agent，纯复用
     // 关键回归：prompt 必须重新注册，而不是因"已安装"标记被跳过
-    expect(created[0].sections.size).toBe(3);
+    expect(created[0].sections.size).toBe(4);
     expect(created[0].contexts.size).toBe(2);
   });
 

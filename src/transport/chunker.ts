@@ -22,6 +22,10 @@ export interface ParagraphBlock {
   text: string;
   /** 是否因超出单条上限被二次切分（块内仍是完整逻辑段） */
   oversized: boolean;
+  /** 块首在原文中的起始 offset（表情标记归属判断用） */
+  start: number;
+  /** 块尾在原文中的结束 offset（不含） */
+  end: number;
 }
 
 /**
@@ -43,31 +47,36 @@ export function splitMarkdownParagraphs(
 
   // ── 1. 逐行扫描，空行分块（fence 内空行不算分隔）──
   const lines = text.split('\n');
-  const blocks: string[] = [];
+  const blocks: Array<{ text: string; start: number; end: number }> = [];
   let current: string[] = [];
   let inCodeBlock = false;
+  let lineOffset = 0;
+  let blockStart = 0;
+  let blockEnd = 0;
 
   const flushBlock = (): void => {
     if (current.length === 0) return;
-    blocks.push(current.join('\n'));
+    blocks.push({ text: current.join('\n'), start: blockStart, end: blockEnd });
     current = [];
   };
 
   for (const line of lines) {
     if (CODE_FENCE_OPEN.test(line)) {
       inCodeBlock = !inCodeBlock;
+      if (current.length === 0) blockStart = lineOffset;
       current.push(line);
-      continue;
-    }
-    if (inCodeBlock) {
+      blockEnd = lineOffset + line.length;
+    } else if (inCodeBlock) {
       current.push(line);
-      continue;
-    }
-    if (line.trim() === '') {
+      blockEnd = lineOffset + line.length;
+    } else if (line.trim() === '') {
       flushBlock();
-      continue;
+    } else {
+      if (current.length === 0) blockStart = lineOffset;
+      current.push(line);
+      blockEnd = lineOffset + line.length;
     }
-    current.push(line);
+    lineOffset += line.length + 1;
   }
   flushBlock();
 
@@ -75,15 +84,21 @@ export function splitMarkdownParagraphs(
     return blocks.map(toBlock);
   }
 
+  const mergeBlocks = (list: typeof blocks, sep: '\n\n' | '\n'): typeof blocks[number] => ({
+    text: list.map((b) => b.text).join(sep),
+    start: list[0]!.start,
+    end: list[list.length - 1]!.end,
+  });
+
   // ── 2. 短段合并：累积不足 minParagraph 时贪心吸收下一段（保持原文 \n\n 连接）──
   if (minParagraph > 0) {
-    const merged: string[] = [];
-    let acc: string | null = null;
+    const merged: typeof blocks = [];
+    let acc: (typeof blocks)[number] | null = null;
     for (const block of blocks) {
       if (acc === null) {
         acc = block;
-      } else if (acc.length < minParagraph && acc.length + 2 + block.length <= limit) {
-        acc = `${acc}\n\n${block}`;
+      } else if (acc.text.length < minParagraph && acc.text.length + 2 + block.text.length <= limit) {
+        acc = mergeBlocks([acc, block], '\n\n');
       } else {
         merged.push(acc);
         acc = block;
@@ -97,15 +112,15 @@ export function splitMarkdownParagraphs(
   // ── 3. 条数上限：超出的块并入最后一条 ──
   if (maxMessages > 0 && blocks.length > maxMessages) {
     const head = blocks.slice(0, maxMessages - 1);
-    const tail = blocks.slice(maxMessages - 1).join('\n\n');
+    const tail = mergeBlocks(blocks.slice(maxMessages - 1), '\n\n');
     blocks.length = 0;
     blocks.push(...head, tail);
   }
 
   return blocks.map(toBlock);
 
-  function toBlock(blockText: string): ParagraphBlock {
-    return { text: blockText, oversized: blockText.length > limit };
+  function toBlock(block: { text: string; start: number; end: number }): ParagraphBlock {
+    return { text: block.text, oversized: block.text.length > limit, start: block.start, end: block.end };
   }
 }
 

@@ -7,6 +7,7 @@
 import type { InlineKeyboard } from '@tencent-connect/qqbot-nodejs';
 import type { Logger, ReplyTarget } from '../types.ts';
 import { planTextChunks, type SplitMessagesOptions } from './chunker.ts';
+import type { StickerDeliverer } from './stickers.ts';
 import { StreamingWriter } from './streaming-writer.ts';
 
 /** 流式输出节流间隔(ms)：连续 chunk 累积后停顿该间隔才推送 */
@@ -33,6 +34,8 @@ export class OutboundBuffer {
   private readonly logger: Logger;
   /** 段落分条发送选项（undefined = 维持单条切分行为） */
   private readonly split: SplitMessagesOptions | undefined;
+  /** 表情投递器（undefined = 纯文本路径）；流式成功时不走此路径 */
+  private readonly stickerDeliverer: StickerDeliverer | undefined;
   /** 构造时拍下的发送目标，本缓冲生命周期内不跟随会话 replyTarget 变化 */
   private readonly target: ReplyTarget;
 
@@ -43,12 +46,14 @@ export class OutboundBuffer {
     logger: Logger,
     streamingEnabled: boolean,
     split?: SplitMessagesOptions,
+    stickerDeliverer?: StickerDeliverer,
   ) {
     this.bot = bot;
     this.limit = limit;
     this.logger = logger;
     this.target = target;
     this.split = split?.enabled ? split : undefined;
+    this.stickerDeliverer = stickerDeliverer?.enabled ? stickerDeliverer : undefined;
     this.writer = streamingEnabled
       ? new StreamingWriter({ bot, target: this.target, logger, throttleMs: STREAM_THROTTLE_MS })
       : null;
@@ -83,10 +88,16 @@ export class OutboundBuffer {
         if (!this.writer.shouldFallback) return;
       }
 
-      // 降级：静态发送（writer 不存在 or 流式失败），启用分段时按段落拆多条
-      const chunks = planTextChunks(this.buffer, this.limit, this.split);
-      for (const chunk of chunks) {
-        await this.bot.sendMarkdown(this.target, chunk);
+      // 降级：静态发送（writer 不存在 or 流式失败）；启用分段时按段落拆多条，
+      // 启用表情时解析 [表情:名字] 标记并按序投递（文本+表情）
+      if (this.stickerDeliverer !== undefined) {
+        const items = this.stickerDeliverer.plan(this.buffer);
+        await this.stickerDeliverer.deliver(this.target, items, this.bot);
+      } else {
+        const chunks = planTextChunks(this.buffer, this.limit, this.split);
+        for (const chunk of chunks) {
+          await this.bot.sendMarkdown(this.target, chunk);
+        }
       }
     } catch (err) {
       this.logger.error(`im-qqbot: flush failed: ${err instanceof Error ? err.message : String(err)}`);

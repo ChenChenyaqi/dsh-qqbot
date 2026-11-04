@@ -95,6 +95,8 @@ export class SessionManager {
   public questionChannel?: QuestionChannel;
   /** 由 bootstrap 注入的审批通道（approval/request → QQ），会话回收时清理其待批审批 */
   public approvalChannel?: ApprovalChannel;
+  /** 由 bootstrap 注入的表情包 section 文本（含表情库列表；未注入 = 未启用） */
+  public stickerSection?: () => string;
 
   constructor(
     ctx: Context,
@@ -142,6 +144,7 @@ export class SessionManager {
         scope,
         personaCard: () => '',
         extraPrompts: () => ({ group: this.config.groupPrompt, direct: this.config.directPrompt }),
+        stickers: () => this.stickerSection?.() ?? '',
       }));
     } catch (err) {
       this.logger.warn(`qq prompt install failed (session keeps working without it): ${errorText(err)}`);

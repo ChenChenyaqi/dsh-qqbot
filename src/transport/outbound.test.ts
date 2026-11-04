@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createOutboundHandler, createTurnTracker } from './outbound.ts';
+import { StickerDeliverer, StickerRegistry } from './stickers.ts';
 import { QqInputRegistry } from './qq-input-origin.ts';
 import type { QQBotSender, StreamSessionLike } from './outbound-buffer.ts';
 import type { SessionManager, SessionRecord } from '../session/index.ts';
@@ -50,6 +54,7 @@ function setup(opts?: {
   record?: SessionRecord | undefined;
   config?: ImQQBotConfig;
   deliverer?: { deliver: ReturnType<typeof vi.fn> };
+  stickers?: StickerDeliverer;
 }) {
   const session = createSession();
   const bot = createBot(session);
@@ -58,9 +63,22 @@ function setup(opts?: {
     findBySessionId: vi.fn((id: string) => (id === 'sess-qq' ? record : undefined)),
   } as unknown as SessionManager;
   const outbound = createOutboundHandler(
-    manager, bot, opts?.config ?? createConfig(), createLogger(), undefined, opts?.deliverer,
+    manager, bot, opts?.config ?? createConfig(), createLogger(), undefined, opts?.deliverer, undefined, opts?.stickers,
   );
   return { outbound, bot, session };
+}
+
+/** 构造带临时表情库的 StickerDeliverer（config 需同时启用 stickers） */
+function createStickerDeliverer(stickerConfig: ImQQBotConfig): StickerDeliverer {
+  const dir = mkdtempSync(join(tmpdir(), 'stickers-it-'));
+  writeFileSync(join(dir, '问号.png'), 'x');
+  const mediaSender = {
+    sendImage: vi.fn().mockResolvedValue({ upload: { file_uuid: 'u' } }),
+    sendVideo: vi.fn(),
+    sendVoice: vi.fn(),
+    sendFile: vi.fn(),
+  };
+  return new StickerDeliverer(new StickerRegistry(dir, createLogger()), mediaSender as never, stickerConfig, createLogger());
 }
 
 const delta = (attemptId: string, text: string) => ({ kind: 'text-delta' as const, attemptId, text });
@@ -211,6 +229,33 @@ describe('OutboundRouter.routeStreamFrame', () => {
     expect(bot.sendMarkdown).toHaveBeenCalledTimes(2);
     expect(bot.sendMarkdown).toHaveBeenNthCalledWith(1, c2cTarget, '第一句。');
     expect(bot.sendMarkdown).toHaveBeenNthCalledWith(2, c2cTarget, '第二句。');
+  });
+
+  it('表情启用：标记解析为文本+表情按序投递，不流式', async () => {
+    const config = createConfig({
+      splitMessages: { enabled: true, minParagraph: 0, maxMessages: 4 },
+      stickers: { enabled: true, dir: '', maxPerTurn: 1 },
+    });
+    const stickers = createStickerDeliverer(config);
+    const mediaSendImage = stickers['mediaSender'] as unknown as { sendImage: ReturnType<typeof vi.fn> };
+    const { outbound, bot } = setup({ config, stickers });
+
+    outbound.routeStreamFrame('sess-qq', start('a1'));
+    outbound.routeStreamFrame('sess-qq', delta('a1', '在[表情:问号]'));
+    outbound.routeStreamFrame('sess-qq', delta('a1', '\n\n又熬夜？'));
+    await vi.advanceTimersByTimeAsync(200);
+
+    outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, {
+      type: 'assistant/message',
+      data: { message: { content: [{ type: 'text', text: '在[表情:问号]\n\n又熬夜？' }] } },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);  // 文本→表情→文本三层 await 链，多 flush 一轮
+
+    expect(bot.openStream).not.toHaveBeenCalled(); // 表情标记与流式互斥
+    expect(bot.sendMarkdown).toHaveBeenNthCalledWith(1, c2cTarget, '在');
+    expect(mediaSendImage.sendImage).toHaveBeenNthCalledWith(1, c2cTarget, { localPath: expect.stringContaining('问号.png') });
+    expect(bot.sendMarkdown).toHaveBeenNthCalledWith(2, c2cTarget, '又熬夜？');
   });
 });
 

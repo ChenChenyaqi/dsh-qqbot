@@ -122,6 +122,20 @@ Split a reply into multiple messages at Markdown paragraph boundaries (blank lin
 | `splitMessages.minParagraph` | number | `0` | Merge threshold in chars: paragraphs shorter than this are merged into the next one to avoid message spam; `0` = never merge |
 | `splitMessages.maxMessages` | number | `4` | Max messages per reply; the overflow is merged into the last one. Default `4` = passive reply quota (each user message allows at most 4 passive replies; extra messages would fall back to proactive push, which has a very low quota) |
 
+### Stickers (stickers)
+
+Let the bot send stickers: the plugin scans a local sticker directory and injects the file names into the prompt; when the model wants to send one it inserts a `[sticker:name]`-style mark (`[表情:name]`) into the reply text, and the outbound layer resolves the mark into the actual image sent right after the corresponding message (mark position = sticker position).
+
+- png / jpg / jpeg / gif / webp / bmp supported; file name (without extension) is the sticker name; adding/removing images takes effect on the next turn
+- Unknown names or over-budget marks are silently dropped — users never see raw `[表情:xxx]` text
+- Enabling this disables streaming output (marks must not leak into streamed text); recommended to enable together with splitMessages so stickers can be attached after each message
+
+| Config | Type | Default | Description |
+|------|------|--------|------|
+| `stickers.enabled` | boolean | `false` | Enable stickers |
+| `stickers.dir` | string | `~/.dsh-qqbot/stickers` | Sticker directory |
+| `stickers.maxPerTurn` | number | `1` | Max stickers per turn (text + stickers share the passive reply quota of 4; stickers are dropped first when over budget) |
+
 ### Access control (access)
 
 | Config | Type | Default | Description |

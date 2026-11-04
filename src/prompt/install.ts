@@ -12,6 +12,7 @@ import type { QQScope } from './scope.ts';
 import { RULES_SECTION_NAME, RULES_ORDER, RULES_TEXT } from './rules.ts';
 import { PERSONA_SECTION_NAME, PERSONA_ORDER, selectPersonaText } from './persona.ts';
 import { EXTRA_SECTION_NAME, EXTRA_ORDER, selectExtraPrompt } from './extra.ts';
+import { STICKERS_SECTION_NAME, STICKERS_ORDER } from './stickers.ts';
 import { TURN_META_CONTEXT_NAME, TURN_META_ORDER } from './turn-meta.ts';
 
 /** Frozen facts from the exact QQ input claimed for the current native turn. */
@@ -27,6 +28,8 @@ export interface QQPromptEntry {
   personaCard(): string;
   /** 补充提示词（群/私分字段）。 */
   extraPrompts(): { group?: string; direct?: string };
+  /** 表情包 section 文本（含可用表情列表；空 = 未启用/表情库为空）。 */
+  stickers?(): string;
   /** Read only the current turn's verified input; queued and previous turns return nothing. */
   turnContext?(): QQTurnContext | undefined;
 }
@@ -45,6 +48,7 @@ export function installQQPrompt(agentCtx: Context, entry: QQPromptEntry): QQProm
   disposers.push(service.section({ name: RULES_SECTION_NAME, order: RULES_ORDER, text: RULES_TEXT }));
   disposers.push(service.section({ name: PERSONA_SECTION_NAME, order: PERSONA_ORDER, text: () => selectPersonaText(entry.personaCard(), entry.scope) }));
   disposers.push(service.section({ name: EXTRA_SECTION_NAME, order: EXTRA_ORDER, text: () => selectExtraPrompt(entry.extraPrompts(), entry.scope) }));
+  disposers.push(service.section({ name: STICKERS_SECTION_NAME, order: STICKERS_ORDER, text: () => entry.stickers?.() ?? '' }));
   // The Host claims its inbox before assembly, but appends user/message only after
   // assembly. Resolve the durable claim instead of observing the previous input.
   // interpolate: false 防止用户文本中的 {{...}} 被插值；旧版类型无此字段，push 处断言桥接。

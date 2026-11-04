@@ -27,6 +27,8 @@ import { startMediaCleanup } from '../media/media-cleaner.ts';
 import { ensureVisionInputModal, registerDescribeImageTool } from '../media/vision-tool.ts';
 import { registerSendFileTool, type MediaSenderLike } from '../media/send-file-tool.ts';
 import { DeliverablesDeliverer } from '../transport/deliverables.ts';
+import { StickerDeliverer, StickerRegistry, resolveStickerDir } from '../transport/stickers.ts';
+import { stickersSectionText } from '../prompt/stickers.ts';
 
 /**
  * interaction 统一分发器：按 button_data 的顶层 `t` 判别字段，路由到对应
@@ -118,8 +120,18 @@ export async function bootstrapGateway(
   // 交付物投递：present 声明的文件在轮末发送到当前会话（outbound 路由触发）
   const deliverablesDeliverer = new DeliverablesDeliverer(sender, mediaSender, config, logger);
 
+  // ── 表情包（模型驱动：prompt 注入文件名列表，回复中插 [表情:名字] 标记）──
+  let stickerDeliverer: StickerDeliverer | undefined;
+  if (config.stickers?.enabled) {
+    const registry = new StickerRegistry(resolveStickerDir(config.stickers.dir), logger);
+    stickerDeliverer = new StickerDeliverer(registry, mediaSender, config, logger);
+    // 惰性 section：每次 prompt 组装现读表情库（TTL 缓存），目录增删图即时生效
+    manager.stickerSection = () => stickersSectionText(registry.names(), config.stickers.maxPerTurn);
+    logger.info(`im-qqbot: stickers enabled (dir=${resolveStickerDir(config.stickers.dir)}, found=${registry.names().length})`);
+  }
+
   const outbound = createOutboundHandler(
-    manager, sender, config, logger, toolsRegistry, deliverablesDeliverer, turnTracker,
+    manager, sender, config, logger, toolsRegistry, deliverablesDeliverer, turnTracker, stickerDeliverer,
   );
   // session/event 按会话作用域派发。根作用域监听不带 global 收不到
   // 桌面恢复出来的 agent，主动回合的 user/message 会直接丢。

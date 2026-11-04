@@ -122,6 +122,20 @@ npx @deepseek-ai/dsh web --patch /path/to/dsh-qqbot/cordis.dev.yml
 | `splitMessages.minParagraph` | number | `0` | 短段合并阈值（字符数），小于该值的段并入下一段，避免短句单独成条刷屏；`0` = 不合并 |
 | `splitMessages.maxMessages` | number | `4` | 最大拆分条数，超出部分并入最后一条；默认 `4` = 被动回复限额（同一条用户消息最多被动回复 4 次，多拆会降级主动推送而主动推送额度极低） |
 
+### 表情包（stickers）
+
+让 bot 发表情包：插件扫描本地表情目录，把文件名列表注入 prompt；模型想发表情时在回复文本中插入 `[表情:名字]` 标记，出站层把标记解析成真实表情图，紧跟在对应消息后发出（标记位置 = 表情位置）。
+
+- 表情图支持 png / jpg / jpeg / gif / webp / bmp，文件名（去扩展名）即表情名，目录增删图片下一轮即生效
+- 名字未命中、超预算时静默丢弃标记，不会把 `[表情:xxx]` 裸露给用户
+- 开启后流式输出自动禁用（标记不能裸露在流式文本里）；建议与 splitMessages 同开（表情才能插在句后）
+
+| 配置 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `stickers.enabled` | boolean | `false` | 是否启用表情包 |
+| `stickers.dir` | string | `~/.dsh-qqbot/stickers` | 表情包目录 |
+| `stickers.maxPerTurn` | number | `1` | 每轮最多发送表情张数（与文本共享被动回复限额：文本+表情合计 ≤ 4，超预算丢表情保文本） |
+
 ### 访问控制（access）
 
 | 配置 | 类型 | 默认值 | 说明 |

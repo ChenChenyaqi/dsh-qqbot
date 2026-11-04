@@ -11,6 +11,7 @@ import { planTextChunks } from './chunker.ts';
 import { OutboundBuffer, type QQBotSender } from './outbound-buffer.ts';
 import { formatToolResult, type ToolsRegistryLike, type ToolResultData } from './tool-presenter.ts';
 import type { DeliverablesDelivererLike } from './deliverables.ts';
+import type { StickerDeliverer } from './stickers.ts';
 import { QqInputRegistry } from './qq-input-origin.ts';
 import { TurnTracker, type DeliveryPlan } from './turn-tracker.ts';
 import {
@@ -81,6 +82,7 @@ class OutboundRouter {
   private readonly toolsRegistry: ToolsRegistryLike | undefined;
   private readonly deliverer: DeliverablesDelivererLike | undefined;
   private readonly tracker: TurnTracker;
+  private readonly stickers: StickerDeliverer | undefined;
 
   public constructor(
     manager: SessionManager,
@@ -90,6 +92,7 @@ class OutboundRouter {
     tracker: TurnTracker,
     toolsRegistry: ToolsRegistryLike | undefined,
     deliverer?: DeliverablesDelivererLike,
+    stickers?: StickerDeliverer,
   ) {
     this.manager = manager;
     this.bot = bot;
@@ -98,6 +101,7 @@ class OutboundRouter {
     this.tracker = tracker;
     this.toolsRegistry = toolsRegistry;
     this.deliverer = deliverer;
+    this.stickers = stickers?.enabled ? stickers : undefined;
   }
 
   /** 事件分发入口 */
@@ -191,6 +195,7 @@ class OutboundRouter {
         this.logger,
         this.shouldStream(plan),
         this.config.splitMessages,
+        this.stickers,
       );
       this.buffers.set(sessionId, buffer);
     }
@@ -198,11 +203,13 @@ class OutboundRouter {
   }
 
   /** 被动回复且 c2c 有 msgId 才流式（群聊、主动推送均不流式）；
-   * 分段发送与流式互斥（QQ 流式是单条消息全量重写） */
+   * 分段发送与流式互斥（QQ 流式是单条消息全量重写）；
+   * 表情标记同理不能裸露在流式文本里 */
   private shouldStream(plan: DeliveryPlan): boolean {
     return !plan.proactive
       && this.config.streaming
       && !this.config.splitMessages?.enabled
+      && !this.config.stickers?.enabled
       && plan.target.scope === 'c2c'
       && !!plan.target.msgId;
   }
@@ -232,7 +239,13 @@ class OutboundRouter {
     const fullText = textParts.join('\n');
     if (!fullText.trim()) return;
 
-    this.trackText(sessionId, this.send(plan.target, fullText, 'sendMarkdown'));
+    // 正文路径：启用表情时解析 [表情:名字] 标记并按序投递；否则维持分段/切分发送
+    if (this.stickers !== undefined) {
+      const items = this.stickers.plan(fullText);
+      this.trackText(sessionId, this.stickers.deliver(plan.target, items, this.bot));
+    } else {
+      this.trackText(sessionId, this.send(plan.target, fullText, 'sendMarkdown'));
+    }
     this.buffers.delete(sessionId);
   }
 
@@ -356,7 +369,8 @@ export function createTurnTracker(
  * 返回 durable 事件与实时流式帧两个入口，分别注册到
  * ctx.on('session/event') 与 ctx.on('agent/assistant-stream', ..., { global: true })。
  * toolsRegistry 用于工具结果的结构化展示；deliverer 用于轮末投递 present 声明的交付文件；
- * tracker 为回合归属的单一事实源，需与提问/审批/发文件共享时由调用方注入。
+ * tracker 为回合归属的单一事实源，需与提问/审批/发文件共享时由调用方注入；
+ * stickers 用于模型驱动的表情包发送（解析标记 + 文本/表情按序投递）。
  */
 export function createOutboundHandler(
   manager: SessionManager,
@@ -366,9 +380,10 @@ export function createOutboundHandler(
   toolsRegistry?: ToolsRegistryLike,
   deliverer?: DeliverablesDelivererLike,
   tracker?: TurnTracker,
+  stickers?: StickerDeliverer,
 ): OutboundHandlers {
   const turns = tracker ?? createTurnTracker(manager, config, logger);
-  const router = new OutboundRouter(manager, bot, config, logger, turns, toolsRegistry, deliverer);
+  const router = new OutboundRouter(manager, bot, config, logger, turns, toolsRegistry, deliverer, stickers);
   return {
     routeSessionEvent: (session, event) => router.route(session, event),
     routeStreamFrame: (agentId, delta) => router.routeStreamFrame(agentId, delta),

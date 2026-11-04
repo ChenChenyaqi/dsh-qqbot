@@ -60,6 +60,16 @@ export interface SendFileConfig {
  */
 export type ExternalTurnDelivery = 'off' | 'c2c' | 'all';
 
+/** 表情包配置：模型从本地表情库按文件名自主选择发送 */
+export interface StickersConfig {
+  /** 是否启用表情包（prompt 注入文件名列表，模型插入 [表情:名字] 标记） */
+  enabled: boolean;
+  /** 表情包目录（空 = ~/.dsh-qqbot/stickers，支持 png/jpg/jpeg/gif/webp/bmp） */
+  dir: string;
+  /** 每轮回复最多发送表情张数（与文本共享被动回复名额） */
+  maxPerTurn: number;
+}
+
 /** 主动推送策略（定时任务等服务回合始终主动推送） */
 export interface ProactiveDeliveryConfig {
   externalTurns: ExternalTurnDelivery;
@@ -123,6 +133,8 @@ export interface ImQQBotConfig {
   proactiveDelivery: ProactiveDeliveryConfig;
   /** 段落分条发送 */
   splitMessages: SplitMessagesConfig;
+  /** 表情包 */
+  stickers: StickersConfig;
 }
 
 /** 访问控制子 Schema（独立导出：config 路由的服务端校验复用） */
@@ -210,4 +222,13 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
     minParagraph: 0,
     maxMessages: 4,
   }).description('段落分条发送配置'),
+  stickers: Schema.object({
+    enabled: Schema.boolean().default(false).description('是否启用表情包（模型从本地表情库自主选择发送）'),
+    dir: Schema.string().default('').description('表情包目录（空 = ~/.dsh-qqbot/stickers，支持 png/jpg/jpeg/gif/webp/bmp）'),
+    maxPerTurn: Schema.number().default(1).description('每轮回复最多发送表情张数（与文本共享被动回复名额）'),
+  }).default({
+    enabled: false,
+    dir: '',
+    maxPerTurn: 1,
+  }).description('表情包配置'),
 });
