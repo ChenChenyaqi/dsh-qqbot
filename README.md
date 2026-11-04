@@ -112,6 +112,16 @@ npx @deepseek-ai/dsh web --patch /path/to/dsh-qqbot/cordis.dev.yml
 | `showToolResults` | boolean | `false` | 是否展示工具调用成功结果（错误始终展示） |
 | `debug` | boolean | `false` | 调试模式 |
 
+### 段落分条发送（splitMessages）
+
+把一段回复按 Markdown 段落（空行边界）拆成多条消息发送，而不是挤在一条带换行的消息里。代码块、GFM 表格不会被拆开；开启后流式输出自动禁用（QQ 流式是单条消息全量重写，与分条互斥）。
+
+| 配置 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `splitMessages.enabled` | boolean | `false` | 是否按段落拆分为多条消息发送（开启后禁用流式输出） |
+| `splitMessages.minParagraph` | number | `0` | 短段合并阈值（字符数），小于该值的段并入下一段，避免短句单独成条刷屏；`0` = 不合并 |
+| `splitMessages.maxMessages` | number | `4` | 最大拆分条数，超出部分并入最后一条；默认 `4` = 被动回复限额（同一条用户消息最多被动回复 4 次，多拆会降级主动推送而主动推送额度极低） |
+
 ### 访问控制（access）
 
 | 配置 | 类型 | 默认值 | 说明 |

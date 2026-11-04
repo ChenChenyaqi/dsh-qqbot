@@ -7,7 +7,7 @@
 import type { SessionManager, SessionRecord } from '../session/index.ts';
 import type { ImQQBotConfig } from '../config.ts';
 import type { Logger, ReplyTarget } from '../types.ts';
-import { chunkMarkdownText } from './chunker.ts';
+import { planTextChunks } from './chunker.ts';
 import { OutboundBuffer, type QQBotSender } from './outbound-buffer.ts';
 import { formatToolResult, type ToolsRegistryLike, type ToolResultData } from './tool-presenter.ts';
 import type { DeliverablesDelivererLike } from './deliverables.ts';
@@ -190,16 +190,19 @@ class OutboundRouter {
         this.config.textChunkLimit,
         this.logger,
         this.shouldStream(plan),
+        this.config.splitMessages,
       );
       this.buffers.set(sessionId, buffer);
     }
     buffer.append(text);
   }
 
-  /** 被动回复且 c2c 有 msgId 才流式（群聊、主动推送均不流式） */
+  /** 被动回复且 c2c 有 msgId 才流式（群聊、主动推送均不流式）；
+   * 分段发送与流式互斥（QQ 流式是单条消息全量重写） */
   private shouldStream(plan: DeliveryPlan): boolean {
     return !plan.proactive
       && this.config.streaming
+      && !this.config.splitMessages?.enabled
       && plan.target.scope === 'c2c'
       && !!plan.target.msgId;
   }
@@ -315,9 +318,9 @@ class OutboundRouter {
     })();
   }
 
-  /** 统一发送：切分 + 逐 chunk 发送 + 错误记录 */
+  /** 统一发送：切分 + 逐 chunk 发送 + 错误记录。启用分段时按段落拆多条 */
   private async send(target: ReplyTarget, text: string, tag: string): Promise<void> {
-    const chunks = chunkMarkdownText(text, this.config.textChunkLimit);
+    const chunks = planTextChunks(text, this.config.textChunkLimit, this.config.splitMessages);
     for (const chunk of chunks) {
       try {
         await this.bot.sendMarkdown(target, chunk);

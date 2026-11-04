@@ -65,6 +65,16 @@ export interface ProactiveDeliveryConfig {
   externalTurns: ExternalTurnDelivery;
 }
 
+/** 段落分条发送配置：把一段回复按 Markdown 段落拆成多条消息 */
+export interface SplitMessagesConfig {
+  /** 是否按段落拆分为多条消息发送（开启后禁用流式：流式是单条消息全量重写） */
+  enabled: boolean;
+  /** 相邻短段合并阈值（字符数），小于该值的段并入下一段；<=0 不合并 */
+  minParagraph: number;
+  /** 最大拆分条数（超出部分并入最后一条；默认 4 = 被动回复限额，多拆会降级主动推送且基本发不出去） */
+  maxMessages: number;
+}
+
 export interface ImQQBotConfig {
   /** QQ Bot AppID */
   appId: string;
@@ -111,6 +121,8 @@ export interface ImQQBotConfig {
   sendFile: SendFileConfig;
   /** 主动推送策略 */
   proactiveDelivery: ProactiveDeliveryConfig;
+  /** 段落分条发送 */
+  splitMessages: SplitMessagesConfig;
 }
 
 /** 访问控制子 Schema（独立导出：config 路由的服务端校验复用） */
@@ -189,4 +201,13 @@ export const ConfigSchema: Schema<ImQQBotConfig> = Schema.object({
   }).default({
     externalTurns: 'c2c',
   }).description('主动推送策略（定时任务等服务回合始终推送）'),
+  splitMessages: Schema.object({
+    enabled: Schema.boolean().default(false).description('是否按段落拆分为多条消息发送（开启后禁用流式输出）'),
+    minParagraph: Schema.number().default(0).description('短段合并阈值（字符数），小于该值的段并入下一段，0=不合并'),
+    maxMessages: Schema.number().default(4).description('最大拆分条数，超出部分并入最后一条（默认 4 = 被动回复限额）'),
+  }).default({
+    enabled: false,
+    minParagraph: 0,
+    maxMessages: 4,
+  }).description('段落分条发送配置'),
 });

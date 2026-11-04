@@ -112,6 +112,16 @@ npx @deepseek-ai/dsh web --patch /path/to/dsh-qqbot/cordis.dev.yml
 | `showToolResults` | boolean | `false` | Show successful tool-call results (errors always shown) |
 | `debug` | boolean | `false` | Debug mode |
 
+### Split messages by paragraph (splitMessages)
+
+Split a reply into multiple messages at Markdown paragraph boundaries (blank lines) instead of one message with embedded line breaks. Code blocks and GFM tables are never split; enabling this disables streaming output (QQ streaming rewrites a single message in place, which is mutually exclusive with multi-message delivery).
+
+| Config | Type | Default | Description |
+|------|------|--------|------|
+| `splitMessages.enabled` | boolean | `false` | Split replies into multiple messages by paragraph (disables streaming output) |
+| `splitMessages.minParagraph` | number | `0` | Merge threshold in chars: paragraphs shorter than this are merged into the next one to avoid message spam; `0` = never merge |
+| `splitMessages.maxMessages` | number | `4` | Max messages per reply; the overflow is merged into the last one. Default `4` = passive reply quota (each user message allows at most 4 passive replies; extra messages would fall back to proactive push, which has a very low quota) |
+
 ### Access control (access)
 
 | Config | Type | Default | Description |

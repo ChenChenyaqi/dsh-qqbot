@@ -101,4 +101,36 @@ describe('OutboundBuffer', () => {
     expect(session.complete).toHaveBeenCalledTimes(1);
     expect(bot.sendMarkdown).not.toHaveBeenCalled(); // 不降级静态
   });
+
+  it('分段启用：flush 静态发送时按段落拆多条', async () => {
+    const bot = createBot();
+    const buffer = new OutboundBuffer(c2cTarget, bot, 4500, createLogger(), false, {
+      enabled: true,
+      minParagraph: 0,
+      maxMessages: 4,
+    });
+
+    buffer.append('第一句。\n\n第二句。\n\n第三句。');
+    await buffer.flush();
+
+    expect(bot.sendMarkdown).toHaveBeenCalledTimes(3);
+    expect(bot.sendMarkdown).toHaveBeenNthCalledWith(1, c2cTarget, '第一句。');
+    expect(bot.sendMarkdown).toHaveBeenNthCalledWith(2, c2cTarget, '第二句。');
+    expect(bot.sendMarkdown).toHaveBeenNthCalledWith(3, c2cTarget, '第三句。');
+  });
+
+  it('分段未启用（split.enabled=false）：维持单条发送', async () => {
+    const bot = createBot();
+    const buffer = new OutboundBuffer(c2cTarget, bot, 4500, createLogger(), false, {
+      enabled: false,
+      minParagraph: 0,
+      maxMessages: 4,
+    });
+
+    buffer.append('第一句。\n\n第二句。');
+    await buffer.flush();
+
+    expect(bot.sendMarkdown).toHaveBeenCalledTimes(1);
+    expect(bot.sendMarkdown).toHaveBeenCalledWith(c2cTarget, '第一句。\n\n第二句。');
+  });
 });

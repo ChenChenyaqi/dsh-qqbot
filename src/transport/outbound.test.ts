@@ -188,6 +188,30 @@ describe('OutboundRouter.routeStreamFrame', () => {
     expect(bot.openStream).toHaveBeenCalledTimes(1);
     expect(session.update).toHaveBeenCalledWith('legacy');
   });
+
+  it('分段启用：c2c 也不流式，静态按段落拆多条发送', async () => {
+    const { outbound, bot, session } = setup({
+      config: createConfig({
+        splitMessages: { enabled: true, minParagraph: 0, maxMessages: 4 },
+      }),
+    });
+
+    outbound.routeStreamFrame('sess-qq', start('a1'));
+    outbound.routeStreamFrame('sess-qq', delta('a1', '第一句。'));
+    outbound.routeStreamFrame('sess-qq', delta('a1', '\n\n第二句。'));
+    await vi.advanceTimersByTimeAsync(200);
+
+    outbound.routeSessionEvent({ header: { id: 'sess-qq' } }, {
+      type: 'assistant/message',
+      data: { message: { content: [{ type: 'text', text: '第一句。\n\n第二句。' }] } },
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(bot.openStream).not.toHaveBeenCalled(); // 分段与流式互斥
+    expect(bot.sendMarkdown).toHaveBeenCalledTimes(2);
+    expect(bot.sendMarkdown).toHaveBeenNthCalledWith(1, c2cTarget, '第一句。');
+    expect(bot.sendMarkdown).toHaveBeenNthCalledWith(2, c2cTarget, '第二句。');
+  });
 });
 
 describe('OutboundRouter: deliverables/presented', () => {

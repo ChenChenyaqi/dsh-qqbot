@@ -6,7 +6,7 @@
  */
 import type { InlineKeyboard } from '@tencent-connect/qqbot-nodejs';
 import type { Logger, ReplyTarget } from '../types.ts';
-import { chunkMarkdownText } from './chunker.ts';
+import { planTextChunks, type SplitMessagesOptions } from './chunker.ts';
 import { StreamingWriter } from './streaming-writer.ts';
 
 /** 流式输出节流间隔(ms)：连续 chunk 累积后停顿该间隔才推送 */
@@ -31,6 +31,8 @@ export class OutboundBuffer {
   private readonly bot: QQBotSender;
   private readonly limit: number;
   private readonly logger: Logger;
+  /** 段落分条发送选项（undefined = 维持单条切分行为） */
+  private readonly split: SplitMessagesOptions | undefined;
   /** 构造时拍下的发送目标，本缓冲生命周期内不跟随会话 replyTarget 变化 */
   private readonly target: ReplyTarget;
 
@@ -40,11 +42,13 @@ export class OutboundBuffer {
     limit: number,
     logger: Logger,
     streamingEnabled: boolean,
+    split?: SplitMessagesOptions,
   ) {
     this.bot = bot;
     this.limit = limit;
     this.logger = logger;
     this.target = target;
+    this.split = split?.enabled ? split : undefined;
     this.writer = streamingEnabled
       ? new StreamingWriter({ bot, target: this.target, logger, throttleMs: STREAM_THROTTLE_MS })
       : null;
@@ -79,8 +83,8 @@ export class OutboundBuffer {
         if (!this.writer.shouldFallback) return;
       }
 
-      // 降级：静态发送（writer 不存在 or 流式失败）
-      const chunks = chunkMarkdownText(this.buffer, this.limit);
+      // 降级：静态发送（writer 不存在 or 流式失败），启用分段时按段落拆多条
+      const chunks = planTextChunks(this.buffer, this.limit, this.split);
       for (const chunk of chunks) {
         await this.bot.sendMarkdown(this.target, chunk);
       }
