@@ -154,6 +154,28 @@ describe('planStickerDelivery', () => {
     ]);
   });
 
+  it('纯表情消息：无文本时表情独立发出（不在找块时丢弃）', () => {
+    const { items, cleanText } = planStickerDelivery('[表情:摸鱼]', files, {
+      limit: 4500, split: splitOn, maxPerTurn: 1, budget: 4,
+    });
+    expect(cleanText).toBe('');
+    expect(items).toEqual([{ kind: 'sticker', name: '摸鱼', path: '/s/摸鱼.gif' }]);
+  });
+
+  it('纯表情但名字不存在：全部静默丢弃，不发任何消息', () => {
+    const { items } = planStickerDelivery('[表情:幻觉]', files, {
+      limit: 4500, split: splitOn, maxPerTurn: 1, budget: 4,
+    });
+    expect(items).toEqual([]);
+  });
+
+  it('标记带尾随空白：剥离后无文本，表情仍独立发出', () => {
+    const { items } = planStickerDelivery('[表情:摸鱼]\n\n', files, {
+      limit: 4500, split: splitOn, maxPerTurn: 1, budget: 4,
+    });
+    expect(items).toEqual([{ kind: 'sticker', name: '摸鱼', path: '/s/摸鱼.gif' }]);
+  });
+
   it('无标记时纯文本计划（与分段行为一致）', () => {
     const { items } = planStickerDelivery('一\n\n二', files, {
       limit: 4500, split: splitOn, maxPerTurn: 1, budget: 4,
